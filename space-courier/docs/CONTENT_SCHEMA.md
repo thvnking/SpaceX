@@ -1,148 +1,54 @@
-# Content Schema (design-level)
+# Content Schema
 
-Schema dưới đây là hợp đồng khái niệm, không phải serialization format đã chốt. Có thể ánh xạ sang Godot Resources/JSON/CSV sau khi chọn implementation. Không điền giá trị gameplay chưa được duyệt.
+This is the content contract for the approved single-ship MVP. Godot Resources are the current implementation format; definitions remain separate from saved instances. Add fields only when a documented system needs them.
 
-## Shared conventions
-- Stable `id` để save tham chiếu; display text riêng.
-- Content definitions tách khỏi runtime instances.
-- Arrays dùng cho tags, effects, rules và shape cells.
-- Tên enum và định dạng lưu trữ còn mở.
+## Ship status
 
-## ItemDefinition
+`food` and `fuel` are capped travel supplies and drain continuously in space. `hull` and `armor` are combat durability, do not passively drain, and are not the same as the stationary economy values `credits` and `reputation`. Base food/fuel caps are 100; an approved equipment effect may raise fuel maximum to 120. Hull maximum is fixed at 5. Armor maximum/current can increase through equipment.
 
-```text
-ItemDefinition
-  id
-  display_name
-  type: Cargo | Equipment (extendable)
-  shape: occupied cell coordinates
-  tags: string[]
-  rarity: one of 4 levels (labels TBD)
-  origin_culture: optional identifier/text
-  effects: EffectDefinition[]
-  placement_rules: PlacementRule[]
-  price: optional economy data (values TBD)
-  durability_policy: none | enabled (details TBD)
-  description: optional
-```
+## ItemDefinition and ItemInstance
 
-`type`, rarity, origin, tags luôn là metadata. Effects, state, placement rules có thể rỗng nếu item không có hành vi đặc biệt. Không dùng weight.
+`ItemDefinition`: stable id, display name, type (`Cargo` or `Equipment`), occupied shape cells, tags, rarity (Common/Uncommon/Rare/Exceptional), origin, description, credit price metadata, effects, placement rules, and optional durability policy. `ItemInstance`: instance id, definition reference, grid position, rotation quarter-turns, state, optional durability, and delivered/lost state where applicable.
 
-## ItemInstance
+Cargo and equipment share a grid. No overlap, stacking, mirroring, weight or adjacency bonus. Rotation is 90 degrees. Invalid placement returns a reason. Fixed core ship cells are not item cells. Civilization hubs permit adding/removing and rearranging. Other worlds permit rearranging already-carried items only. No inventory changes in flight/combat.
 
-```text
-ItemInstance
-  instance_id
-  definition_id
-  durability_current: optional
-  state: optional key/value or typed state (format TBD)
-```
+### Approved initial ship
 
-Durability chỉ có trên một số equipment; zero disables until repair. Cargo loss chỉ xảy ra khi mission đặc biệt định nghĩa điều đó.
+One 13×3 bounding grid: central 7×3 body, with a 3×1 wing on each side centered vertically. Cockpit, engine and energy room are fixed cells. The drawing supplied by the user is a visual reference, not a precise trace. Equipment loadout and exact component cell assignment should be authored as data and kept visually coherent.
 
-## Shape
+### Approved initial equipment
 
-Tập hợp tọa độ cell tương đối. Ví dụ hình chữ nhật lưu toàn bộ cell; dấu cộng và 3 cell chéo được thể hiện bằng tọa độ. Rotation theo bội số 90°. Cell origin/rotation normalization cần được chốt implementation. Irregular cargo chỉ dành cho hàng đặc biệt; equipment có thể dùng shape đặc biệt.
+| Equipment | Shape | Effect |
+|---|---|---|
+| Circular Recycling System | 2×1 | Every 5 food consumed grants 2 fuel, up to current fuel maximum; preserve fractional consumption between triggers. |
+| Auxiliary Fuel Cell | 1×2 | Raises max fuel by 20; no instant refill. Maximum becomes 120 while installed. |
+| Armor Plating | 2×1 | Raises armor maximum by 2; no instant repair. |
+| ASECA satellite defense | 5-cell plus | Once per combat, absorbs one incoming projectile; activate with key 1. |
 
-## PlacementRule
+Start with Circular Recycling System and Armor Plating installed. Auxiliary Fuel Cell and ASECA are available at Civilization hubs. Basic equipment costs 200–350 Credits; starting credits are zero. No hidden effect from rarity or placement is implied.
 
-```text
-PlacementRule
-  rule_type
-  parameters
-```
+## Planet and system
 
-Ví dụ conceptual rule types: `avoid_high_heat`, `avoid_low_heat`, adjacency/contact rule theo item/ship tags, forbidden zones. Đây là khả năng kiến trúc; chỉ các rule đã được ghi trong item example mới là quyết định content. Validator phải từ chối drop và trả lý do dễ hiểu.
-
-## EffectDefinition
-
-```text
-EffectDefinition
-  effect_type
-  parameters
-  trigger: optional condition/event
-```
-
-Dùng cho resource conversion, defense, combat hoặc behavior; event timing, stacking, clamping và ordering còn TBD.
-
-## ShipDefinition
-
-```text
-ShipDefinition
-  id
-  display_name
-  layout_cells
-  core_components: cockpit, engine, energy_room (fixed)
-  placement_zones / cell tags (if needed)
-  visual_reference: optional asset reference
-  unlock/economy data: TBD
-```
-
-Layout cố định theo ship; hình ảnh gameplay và inventory cần tương ứng. Ship mới mở ra layout vật lý khác.
-
-## PlanetDefinition
-
-```text
-PlanetDefinition
-  id
-  display_name
-  civilization_present: bool
-  world_type: Civilization | Colony | Extraction
-  system_id
-  owner_name
-  resource_notes: string[]
-  resource_refill_policy: TBD
-  hub_services: optional list (MVP delivery + buy/sell only)
-```
-
-The demo implementation also stores `world_type`, `system_id`, `owner_name`, and `resource_notes` on each planet. Civilization status is reflected by the existing `civilization_present` field. A separate galaxy-system record should eventually own display name, 2D map position, and planet references; these are currently held in `GalaxyMapView.SYSTEMS` and mirrored in `DemoContent`. Keep authored map content data-driven when replacing the demo.
-
-The current demo has 10 Mars-colony systems, 20 planets, and four civilization points in systems 01, 04, 07, and 09. Each planet is assigned one of the three world types. Extraction resource notes describe intended resources; they do not yet represent a collectable inventory or resource quantity.
+`PlanetDefinition`: stable id, display name, world type (`Civilization`, `Colony`, `Extraction`), system id, owner, resource notes, and hub permissions. Arrival does not refill supplies. The current side map is implemented by `GalaxyMapView`: it owns the 10-system presentation, selection, pan/zoom, current-system focus, planet orbit preview and six saved sigil markers. Names and positions remain duplicated between `GalaxyMapView` and demo setup until a dedicated `GalaxySystem` resource is introduced for production content.
 
 ## TravelDefinition
 
-```text
-TravelDefinition
-  id
-  origin_planet_id
-  destination_planet_id
-  segment_durations_seconds[]
-  resource_drain_per_second: resource -> rate
-  segment_events: optional segment -> event
-  segment_combats: optional segment -> combat
-```
-
-Players may choose any destination planet directly; map stars do not enforce a neighbor graph. The demo generates a direct travel definition for each ordered pair of different planets. The current map position formula and resource rates are temporary demonstration values, not final design constraints. The runtime estimates total food and fuel costs, includes the worst negative event-choice delta, and refuses departure when either resource is short.
-
-Map markers are player-defined annotations attached to system ids. The current demo uses six abstract geometric neon sigils in six colors; no sigil has a fixed meaning. Marker values are stored with save data.
-
-## MissionDefinition
-
-```text
-MissionDefinition
-  id
-  display_name
-  delivery_target_planet_id
-  required_cargo: item/quantity references
-  trip_count_or_completion_conditions: TBD
-  reward/reputation: TBD
-```
-
-Mission target được đánh dấu trên map; player tự chọn hành tinh kế tiếp. Một delivery có thể cần nhiều chuyến.
+`TravelDefinition`: id, origin/destination planet ids, segment durations, resource drain rates and event/combat hooks. Direct destinations are unrestricted. ETA is 30 seconds within a system and linearly interpolated from 120 to 600 seconds between different systems according to map distance. Rates are food 0.018/s and fuel 0.12/s. Event schedule is runtime timed at about 60 seconds, pauses during combat and player choice, and has at most one pending event.
 
 ## EventDefinition
 
-```text
-EventDefinition
-  id
-  prompt_source: assistant | crew (content framing)
-  question
-  choices: exactly 2
-  conditions: TBD
-  effects: TBD
-```
+Exactly two choice labels and effects. Early outcomes usually trade one ship status for another: either uneven exchange (for example −1 food, +2 fuel) or even exchange (−1 food, +1 fuel). Clamp to resource limits. No event during combat. Event voice defaults to assistant; crew voice is deferred.
 
-Trigger theo travel segment. Frequency, event pool, persistence và outcomes chưa chốt.
+## MissionDefinition and progression
 
-## Combat / equipment content
-Combat encounter, enemy, weapon, armor, special activation và cooldown cần schema chi tiết hơn khi rules được quyết định. Không tạo số liệu mặc định.
+MVP mission requires cargo at a delivery planet in one trip, has no deadline, and fails if cargo is lost. Reward data uses Credits (50–100 typical) and reputation (+5–15 typical). Multi-trip story/high-tier missions are deferred. Seven cumulative reputation thresholds: 100, 300, 900, 2,700, 8,100, 24,300, 72,900. Rank unlocks are deferred.
+
+Persist delivery failure counts per Civilization. At five failures, require a 1,000 Credit fine on next hub visit. Paying restores access; refusing blocks hub and its missions for the save.
+
+## CombatDefinition
+
+Initial combat duration is 45 seconds, with at most two weak enemies. Enemies enter from screen edges, orbit/circle the centered player ship, and fire; they do not ram or charge directly. Survivors retreat at timeout. Resolve on timer expiry or zero enemies. Armor absorbs hits before hull; one hit is one point. Special equipment maps to number keys. Keep encounter data content-driven; do not add weapon stats or damage rules beyond approved scope.
+
+## Save schema
+
+Save player resources, hull/armor, credits, reputation points/rank, inventory positions/states, current planet, missions, Civilization failure/access state and sigils. One autosave checkpoint immediately before each departure; manual saves are player-controlled and available only while docked. No timed/in-flight autosave. Death offers new game, latest save, or manual save selection.

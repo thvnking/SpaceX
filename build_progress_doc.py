@@ -6,7 +6,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-OUT = r"C:\Users\ADMIN\Documents\SpaceX\space-courier\docs\BAO_CAO_TIEN_DO_SPACE_COURIER.docx"
+OUT = r"D:\Godot\SpaceX\space-courier\docs\BAO_CAO_TIEN_DO_SPACE_COURIER.docx"
 doc = Document()
 sec = doc.sections[0]
 sec.orientation = WD_ORIENT.LANDSCAPE
@@ -60,8 +60,8 @@ for child in list(title_ppr):
     if child.tag == qn('w:pBdr'):
         title_ppr.remove(child)
 p=doc.add_paragraph(); p.paragraph_format.space_after=Pt(8)
-r=p.add_run('Bản tổng hợp theo project hiện có  |  20/11/2026'); r.font.size=Pt(10); r.font.color.rgb=RGBColor(90,105,116)
-doc.add_paragraph('Space Courier là game phiêu lưu không gian thiên về quản lý tàu và vận chuyển hàng hóa. Bản đồ demo hiện mô phỏng một khu vực thiên hà gồm 10 hệ sao, 20 hành tinh và chuyến đi trực tiếp giữa mọi cặp hành tinh nếu đủ food/fuel. Tên riêng, vị trí và thông số bản đồ vẫn là dữ liệu demo; phần thu thập tài nguyên tại hành tinh khai thác chưa được triển khai.', style='Normal')
+r=p.add_run('Bản tổng hợp theo project hiện có  |  21/11/2026'); r.font.size=Pt(10); r.font.color.rgb=RGBColor(90,105,116)
+doc.add_paragraph('Space Courier là game phiêu lưu không gian thiên về quản lý tàu và vận chuyển hàng hóa. Baseline MVP chính thức hiện đã được đưa vào runtime: một tàu, tài nguyên bay có giới hạn, event, combat nhẹ, giao hàng, market, checkpoint trước chuyến bay và lựa chọn sau khi chết. Bản đồ 10 hệ sao và tên hành tinh vẫn là dữ liệu demo; crew, khai thác và nhiệm vụ nhiều chặng được giữ ngoài phạm vi MVP.', style='Normal')
 doc.add_heading('Cách đọc trạng thái', level=1)
 table(['Ký hiệu','Ý nghĩa'],[
 ('✅ Hoàn thành','Đã có triển khai hoặc nội dung chạy được trong project.'),
@@ -73,11 +73,11 @@ table(['Hạng mục','Trạng thái','Đã có','Còn lại / bước tiếp th
 ('Chọn điểm đến trực tiếp','✅ Hoàn thành','Bản đồ 10 hệ/20 hành tinh; chọn sao để xem hành tinh và chọn điểm đến bất kỳ.','Thay tên/vị trí demo bằng nội dung duyệt; bổ sung cơ chế thu thập tại Extraction.'),
 ('Zoom và đánh dấu bản đồ','✅ Hoàn thành','Zoom/pan, sơ đồ hệ sao và sáu sigil neon lưu theo hệ.','Hoàn thiện visual UI và thay nội dung demo sau khi duyệt.'),
 ('Bay tự động','✅ Hoàn thành','Có 380 chuyến trực tiếp giữa các cặp hành tinh có hướng.','Cân chỉnh thời gian, khoảng cách và nhịp chơi.'),
-('Resource drain và preflight','✅ Hoàn thành','Map hiển thị chi phí; không khởi hành khi thiếu food/fuel; event dự trù theo lựa chọn âm lớn nhất.','Chốt loại tài nguyên, mức khởi đầu, giới hạn, refill và tốc độ tiêu hao.'),
-('Hồi tài nguyên tại planet','✅ Hoàn thành','Lượng refill cấu hình theo planet, có phân biệt hub/planet trống trong demo.','Chốt tài nguyên hồi, lượng, chi phí và điều kiện.'),
-('Resource hết / chết','🟡 Một phần','Food bằng 0 xử lý death.','Chốt quy tắc khi fuel hoặc tài nguyên khác về 0, có dừng tàu hay grace period không.'),
+('Resource drain và preflight','✅ Hoàn thành','Food/fuel khởi đầu 100; drain 0.018/s và 0.12/s; map hiển thị chi phí; thiếu tài nguyên thì không khởi hành.','Playtest và cân bằng sau khi có dữ liệu chơi thực tế.'),
+('Hồi tài nguyên tại planet','✅ Hoàn thành','Không có tự động hồi khi đến hành tinh; tăng tài nguyên chỉ qua equipment hoặc lựa chọn event.','Có thể mở rộng dịch vụ refuel ở phase sau nếu được duyệt.'),
+('Resource hết / chết','✅ Hoàn thành','Fuel 0 làm tàu stranded; food 0 làm chết; không có grace period; có New Game/Load Latest/Load Save.','Kiểm thử thêm các trường hợp biên trong playtest.'),
 ('Travel events hai lựa chọn','✅ Hoàn thành','Có event theo route segment và lựa chọn kèm kết quả.','Bổ sung event pool, tần suất, hậu quả và cách xử lý event trong combat.'),
-('Thời lượng chuyến','🟡 Một phần','Có ETA demo từ tọa độ; 8 giây trong cùng hệ, ngoài hệ dùng max(8, khoảng cách × 70).','Cân chỉnh công thức theo nhịp chơi; số liệu hiện tại chưa phải thông số cuối.')],[1.55,1.2,3.5,4.05])
+('Thời lượng chuyến','✅ Hoàn thành','30 giây nội hệ; 120–600 giây liên hệ theo khoảng cách bản đồ; event clock khoảng 60 giây.','Playtest để cân bằng nhịp chơi.')],[1.55,1.2,3.5,4.05])
 
 doc.add_heading('2. Tàu, inventory và thiết bị', level=1)
 table(['Hạng mục','Trạng thái','Đã có','Còn lại / bước tiếp theo'],[
@@ -85,23 +85,23 @@ table(['Hạng mục','Trạng thái','Đã có','Còn lại / bước tiếp th
 ('Inventory grid dùng chung','✅ Hoàn thành','Grid view và mô hình placement cho cargo/equipment.','Hoàn thiện UX kéo thả, trạng thái chọn và thao tác trên UI.'),
 ('Xoay 90 độ và kiểm tra placement','✅ Hoàn thành','Rotation, placement rules và phản hồi vị trí không hợp lệ.','Chốt tọa độ shape, mirror, từ vựng rule và quy tắc validator.'),
 ('Cell tags / hiệu ứng vị trí','🟡 Một phần','Có cell tags và placement rules cấu hình.','Chốt heat/power/contact, thứ tự áp dụng effect và ví dụ cân bằng.'),
-('Layout tàu mẫu','🟡 Một phần','Có một layout demo 5×4.','Chốt tàu bắt đầu, phòng lõi, ô sử dụng được và layout các tàu khác.'),
+('Layout tàu mẫu','✅ Hoàn thành','Một tàu chính thức: thân 7×3 và hai cánh 3×1; core cockpit/engine/energy room; ô lõi không thể đặt hàng.','Tạo tàu mới ở phase sau.'),
 ('Nâng cấp / tàu mới','⬜ Chưa làm','Thiết kế hướng tới layout vật lý khác nhau.','Tạo tàu, quy tắc mở khóa và tiến trình nâng cấp; không chỉ tăng số ô.')],[1.6,1.2,3.5,4.0])
 
 doc.add_heading('3. Nhiệm vụ, giao hàng và kinh tế', level=1)
 table(['Hạng mục','Trạng thái','Đã có','Còn lại / bước tiếp theo'],[
 ('Catalog mission và delivery','✅ Hoàn thành','Có mission definition và luồng giao parcel demo.','Tạo nhiệm vụ đa dạng, xác nhận planet nhận và điều kiện hoàn thành.'),
 ('Giao hàng nhiều chuyến','🟡 Một phần','Thiết kế cho phép nhiệm vụ cần nhiều chuyến.','Chốt giữ cargo giữa chuyến, giao một phần, deadline và thất bại.'),
-('Mua/bán tại hub','✅ Hoàn thành','Market demo dùng một currency.','Chốt tên tiền, giá mua/bán, stock và quy tắc cập nhật hàng.'),
-('Reputation XP','🟡 Một phần','Có giá trị demo cho reward/penalty.','Chốt nguồn tăng giảm, ngưỡng, unlock set và điều kiện bị ban.'),
-('Hub MVP','🟡 Một phần','Có các layout/service delivery và market.','Hoàn thiện flow tương tác; repair/refuel/quest/NPC để phase sau.')],[1.6,1.2,3.5,4.0])
+('Mua/bán tại hub','✅ Hoàn thành','Currency Credit; reward chuyến 50–100; market có đủ bốn equipment cơ bản; Civilization hub cho kéo/thả/thêm/bớt/sắp xếp.','Playtest và cân bằng giá/stock.'),
+('Reputation XP','✅ Hoàn thành','Mỗi chuyến +5–15; bảy cấp, ngưỡng cấp sau gấp ba cấp trước; thất bại 5 chuyến kích hoạt fine 1.000 Credit hoặc khóa hub.','Bổ sung nội dung cốt truyện cộng reputation ở phase sau.'),
+('Hub MVP','✅ Hoàn thành','Có delivery desk, market, xử lý fine/block; hành tinh khác chỉ cho sắp xếp.','Repair/refuel/quest/NPC để phase sau.')],[1.6,1.2,3.5,4.0])
 
 doc.add_heading('4. Combat', level=1)
 table(['Hạng mục','Trạng thái','Đã có','Còn lại / bước tiếp theo'],[
 ('Điều kiện giải quyết combat','✅ Hoàn thành','Encounter model hỗ trợ diệt địch, sống sót hết giờ, hoặc thiết bị đặc biệt.','Xác định thứ tự kết thúc encounter và các trường hợp đồng thời.'),
 ('Combat tiếp tục cùng tuyến bay','✅ Hoàn thành','Encounter có thời lượng, route vẫn tiếp diễn theo thiết kế.','Kiểm tra tương tác với event, resource và death.'),
 ('Điều khiển twin-stick','🟡 Một phần','Định hướng thiết kế: top-down, di chuyển và aim độc lập.','Hoàn thiện input, cảm giác chuyển động, aim, projectile và UX.'),
-('Enemy, spawn và cân bằng damage','⬜ Chưa làm','Có combat definition và encounter demo đơn giản.','Chốt quy tắc trigger, composition, AI, HP/damage, armor/shield và weapon stats.')],[1.65,1.2,3.45,4.0])
+('Enemy, spawn và cân bằng damage','✅ Hoàn thành','Tối đa hai địch yếu bay từ rìa và orbit quanh tàu; encounter 45 giây; bắn hạ từng địch hoặc sống sót; damage đi qua armor rồi hull.','Mở rộng roster/AI sau MVP.')],[1.65,1.2,3.45,4.0])
 
 doc.add_heading('5. Giao diện và trải nghiệm', level=1)
 table(['Hạng mục','Trạng thái','Đã có','Còn lại / bước tiếp theo'],[
@@ -121,22 +121,22 @@ table(['Hạng mục','Trạng thái','Ghi nhận hiện tại','Bước tiếp 
 doc.add_heading('7. Lưu game và nền tảng kỹ thuật', level=1)
 table(['Hạng mục','Trạng thái','Đã có','Còn lại / bước tiếp theo'],[
 ('Save/load thủ công','✅ Hoàn thành','Game session hỗ trợ lưu và tải.','Hoàn thiện UX chọn slot và xử lý lỗi dữ liệu.'),
-('Autosave 5 phút','✅ Hoàn thành','Đã có chu kỳ autosave 5 phút.','Chốt retention/rotation và thông báo autosave.'),
-('Khôi phục khi chết','✅ Hoàn thành','Có khôi phục về save trước.','Chốt chính xác checkpoint, trường hợp chết trong event/combat.'),
+('Autosave checkpoint','✅ Hoàn thành','Chỉ ghi một checkpoint ngay trước mỗi lần khởi hành; không autosave giữa chuyến.','Playtest các tình huống chết và stranded.'),
+('Khôi phục khi chết','✅ Hoàn thành','Death screen có New Game, Load Latest Save và Load Save thủ công; save cũ không bị xóa khi New Game.','Kiểm thử thêm dữ liệu save cũ/không hợp lệ.'),
 ('Lưu state đang bay','🟡 Một phần','Có lưu travel/event state.','Xác định rõ state nào lưu giữa chuyến và safe checkpoint.'),
 ('Godot/platform/data format','🟡 Một phần','Đã có Godot project và dữ liệu runtime kiểu Resource.','Chốt Godot version, platform, viewport, localization và pipeline asset.')],[1.65,1.2,3.45,4.0])
 
 doc.add_heading('8. Tóm tắt dữ liệu demo hiện tại', level=1)
 table(['Mảng','Giá trị demo','Lưu ý'],[
-('Tàu khởi đầu','5×4 ô; cockpit, engine, energy room; 1 ô heat cao.','Chỉ là cấu hình chạy thử.'),
-('Khởi đầu','Launch Port; 40 food, 40 fuel, 20 hull HP, 30 credits.','Thông số chưa cân bằng.'),
+('Tàu khởi đầu','7×3 ô trung tâm + hai cánh 3×1; cockpit/engine/energy room cố định.','Một tàu duy nhất trong MVP.'),
+('Khởi đầu','Launch Port; 100 food, 100 fuel, 5 hull, 3 armor, 0 credits.','Fuel cap lên 120 khi lắp Auxiliary Fuel Cell.'),
 ('Hệ sao/hành tinh','10 hệ, 20 hành tinh; bốn điểm nền văn minh ở hệ 01, 04, 07, 09; tất cả thuộc địa Sao Hỏa.','Tên hệ, vị trí và phân loại là demo tạm.'),
-('Travel trực tiếp','380 chuyến có hướng; ETA dùng khoảng cách trên bản đồ; 8 giây trong cùng hệ.','Không có topology tuyến giới hạn đích; công thức ETA cần cân chỉnh.'),
-('Drain/refill','0.1 food/s, 0.2 fuel/s; refill cấu hình theo từng hành tinh.','Giá trị demo, cần playtest và điều chỉnh.'),
+('Travel trực tiếp','380 chuyến có hướng; 30 giây nội hệ; 120–600 giây liên hệ.','Chọn đích trực tiếp; không giới hạn topology trong MVP.'),
+('Drain/refill','0.018 food/s, 0.12 fuel/s; không tự hồi khi đến planet.','Equipment và event là nguồn tăng tài nguyên.'),
 ('Map markers','Sáu sigil hình học trừu tượng với màu cyan, hồng, vàng, tím, xanh lá và cam.','Người chơi tự gán ý nghĩa; sigil lưu theo hệ.'),
-('Cargo/mission','Survey Parcel; mua 18, bán 15; mission reward 12 credits + 1 reputation XP.','Giá và phần thưởng tạm.'),
-('Event/combat','Một event hai lựa chọn; một encounter 4 giây trên route demo.','Chưa đại diện cho nội dung cuối.'),
-('Equipment','Recycling Unit chiếm 2 ô ngang; giá mua 24, bán 12 credits.','Item ví dụ để thử grid/market.')],[1.45,5.3,4.0])
+('Cargo/mission','Survey Parcel; giá mua 0, bán 125; mission reward 75 credits + 10 reputation XP.','Mất hàng làm thất bại nhiệm vụ; không có deadline.'),
+('Event/combat','Event hai lựa chọn khoảng mỗi phút; combat 45 giây, tối đa 2 địch, không event trong combat.','Combat nhẹ cho MVP.'),
+('Equipment','Recycling System 200; Fuel Cell 250; Armor Plating 200; ASECA 300 credits.','Recycling + Armor lắp sẵn; Fuel Cell/ASECA mua tại hub.')],[1.45,5.3,4.0])
 
 doc.add_heading('Các hệ sao trong bản đồ demo', level=2)
 map_note = doc.add_paragraph('Toàn bộ hệ được ghi nhận là thuộc địa Sao Hỏa. Tên riêng và resource notes dưới đây là dữ liệu demo, chưa phải nội dung canon; bốn điểm nền văn minh nằm ở hệ 01, 04, 07 và 09.', style='Normal')

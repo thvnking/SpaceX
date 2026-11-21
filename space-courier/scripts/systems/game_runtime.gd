@@ -9,6 +9,7 @@ signal arrival_completed(planet_id: StringName)
 
 const SETUP_PATH := "res://data/game_setup.tres"
 const MANUAL_SAVE_SLOTS := 3
+const EVENT_INTERVAL_SECONDS := 60.0
 
 var catalog := ContentCatalog.new()
 var setup: GameSetupDefinition
@@ -18,14 +19,19 @@ var combat := CombatEncounter.new()
 var is_configured := false
 var gameplay_active := false
 var setup_status := "Loading game content…"
-var _autosave_clock := 0.0
+var _event_clock := 0.0
 var active_mission_id: StringName
 var mission_completed := false
+var mission_failed := false
 var credits := 0
 var reputation_xp := 0
 var galaxy_markers: Dictionary = {}
 var _market_instance_counter := 0
 var _playtime_seconds := 0.0
+var civilization_failures: Dictionary = {}
+var blocked_civilizations: Dictionary = {}
+var _combat_damage_clock := 0.0
+var _starting_item_templates: Array[ItemInstance] = []
 
 
 func _ready() -> void:
@@ -45,6 +51,10 @@ func _ready() -> void:
 		setup_status = "Game setup needs a starting planet, ship, food, and hull value."
 		status_updated.emit()
 		return
+	_starting_item_templates.clear()
+	for source_item in setup.starting_items:
+		if source_item != null:
+			_starting_item_templates.append(source_item.duplicate(true) as ItemInstance)
 	var ship := catalog.get_definition("ship", setup.starting_ship_id) as ShipDefinition
 	inventory.configure(ship)
 	for starting_item in setup.starting_items:
@@ -57,7 +67,9 @@ func _ready() -> void:
 			setup_status = "Starting item placement is invalid: %s" % placement.reason
 			status_updated.emit()
 			return
+	_recalculate_equipment_bonuses()
 	session.configure(setup.starting_planet_id, setup.starting_resource_values, setup.starting_hull_hp, {}, Callable(self, "_resolve_content"))
+	_recalculate_equipment_bonuses()
 	active_mission_id = setup.starting_mission_id
 	credits = setup.starting_credits
 	session.state_changed.connect(_on_state_changed)
@@ -83,27 +95,29 @@ func _ready() -> void:
 			load_path = _manual_slot_path(newest_slot)
 	if FileAccess.file_exists(load_path):
 		var load_result := session.load_game(load_path)
-		if not load_result.ok:
-			setup_status = "Saved game could not be loaded: %s" % load_result.reason
-			status_updated.emit()
-			return
-		var inventory_result := _restore_inventory()
-		if not inventory_result.ok:
-			setup_status = "Saved inventory could not be loaded: %s" % inventory_result.reason
-			status_updated.emit()
-			return
-		var campaign_result := _restore_campaign_state()
-		if not campaign_result.ok:
-			setup_status = "Saved mission data could not be loaded: %s" % campaign_result.reason
-			status_updated.emit()
-			return
-		loaded_existing_save = true
+		if load_result.ok:
+			var inventory_result := _restore_inventory()
+			if inventory_result.ok:
+				var campaign_result := _restore_campaign_state()
+				if campaign_result.ok:
+					loaded_existing_save = true
+				else:
+					_reset_runtime_state()
+					setup_status = "Official demo setup"
+			else:
+				# A save from the pre-official ship grid may load as JSON but still
+				# contain placements that cannot exist on the current ship. Ignore it
+				# for boot, then provide a clean New Game state.
+				_reset_runtime_state()
+				setup_status = "Official demo setup"
+		else:
+			# Old demo saves can contain placements outside the official ship grid.
+			# Keep the file for manual recovery, but start from a clean official state.
+			_reset_runtime_state()
+			setup_status = "Official demo setup"
 	if not loaded_existing_save:
 		_reset_runtime_state()
-		_save_autosave()
-		_save_autosave()
 	elif load_path != GameSession.AUTOSAVE_PATH:
-		_save_autosave()
 		_save_autosave()
 	setup_status = "%s · %s" % ["Demo scenario" if using_demo_setup else "Ready", ship.display_name]
 	is_configured = true
@@ -114,14 +128,23 @@ func _process(delta: float) -> void:
 	if not is_configured or not gameplay_active:
 		return
 	_playtime_seconds += maxf(delta, 0.0)
-	if session.state == GameSession.TravelState.TRAVELLING or session.state == GameSession.TravelState.EVENT_PAUSED:
-		combat.tick(delta)
 	if session.state == GameSession.TravelState.TRAVELLING:
+		combat.tick(delta)
+		if combat.active:
+			_combat_damage_clock += maxf(delta, 0.0)
+			if _combat_damage_clock >= 10.0:
+				_combat_damage_clock = 0.0
+				session.apply_hull_damage(1.0)
+		var food_before := float(session.resources.get("food", 0.0))
 		session.tick_travel(delta)
-	_autosave_clock += maxf(delta, 0.0)
-	if _autosave_clock >= GameSession.AUTOSAVE_INTERVAL_SECONDS:
-		_autosave_clock = fmod(_autosave_clock, GameSession.AUTOSAVE_INTERVAL_SECONDS)
-		_save_autosave()
+		_apply_food_conversion(food_before)
+		if not combat.active and session.state == GameSession.TravelState.TRAVELLING:
+			_event_clock += maxf(delta, 0.0)
+			if _event_clock >= EVENT_INTERVAL_SECONDS:
+				_event_clock = 0.0
+				_request_timed_event()
+	elif session.state == GameSession.TravelState.STRANDED:
+		session.tick_travel(delta)
 
 
 func begin_travel(travel_id: StringName) -> Dictionary:
@@ -135,7 +158,9 @@ func begin_travel(travel_id: StringName) -> Dictionary:
 	var quote := get_travel_quote(travel_id)
 	if not quote.ok:
 		return quote
+	_save_autosave()
 	var result := session.begin_travel(definition)
+	_event_clock = 0.0
 	status_updated.emit()
 	return result
 
@@ -192,21 +217,145 @@ func choose_event(choice_index: int) -> Dictionary:
 	return result
 
 
+func _request_timed_event() -> void:
+	if session.pending_event != null or combat.active:
+		return
+	var event := catalog.get_definition("event", &"demo_supply_question") as EventDefinition
+	if event == null:
+		return
+	session.pending_event = event
+	session.state = GameSession.TravelState.EVENT_PAUSED
+	session.state_changed.emit()
+	event_opened.emit(event)
+
+
+func _has_equipment_effect(effect_type: StringName) -> bool:
+	for instance in inventory.items:
+		if instance == null or instance.definition == null:
+			continue
+		for effect in instance.definition.effects:
+			if StringName(effect.get("effect_type", "")) == effect_type:
+				return true
+	return false
+
+
+func _recalculate_equipment_bonuses() -> void:
+	if session == null:
+		return
+	session.max_resources = {"food": 100.0, "fuel": 100.0}
+	var armor_max := 3.0
+	for instance in inventory.items:
+		if instance == null or instance.definition == null:
+			continue
+		for effect in instance.definition.effects:
+			var kind := StringName(effect.get("effect_type", ""))
+			if kind == &"maximum_resource":
+				var resource_id := String(effect.get("resource", ""))
+				session.max_resources[resource_id] = float(session.max_resources.get(resource_id, 100.0)) + float(effect.get("amount", 0.0))
+			elif kind == &"maximum_armor":
+				armor_max += float(effect.get("amount", 0.0))
+	session.defense_pool = minf(session.defense_pool, armor_max) if session.defense_pool > 0.0 else armor_max
+	for resource_id in session.max_resources:
+		session.resources[resource_id] = minf(float(session.resources.get(resource_id, 0.0)), float(session.max_resources[resource_id]))
+
+
+func _apply_food_conversion(food_before: float) -> void:
+	var consumed := maxf(0.0, food_before - float(session.resources.get("food", 0.0)))
+	if consumed <= 0.0:
+		return
+	for instance in inventory.items:
+		if instance == null or instance.definition == null:
+			continue
+		for effect in instance.definition.effects:
+			if StringName(effect.get("effect_type", "")) != &"food_to_fuel":
+				continue
+			var progress := float(instance.current_state.get("food_conversion_progress", 0.0)) + consumed
+			var threshold := float(effect.get("food_per_trigger", 5.0))
+			var triggers := floori(progress / threshold)
+			if triggers > 0:
+				var cap := float(session.max_resources.get("fuel", 100.0))
+				session.resources["fuel"] = minf(cap, float(session.resources.get("fuel", 0.0)) + triggers * float(effect.get("fuel_per_trigger", 2.0)))
+				progress -= triggers * threshold
+			instance.current_state["food_conversion_progress"] = progress
+
+
+func _is_required_mission_cargo(item_id: StringName) -> bool:
+	if mission_completed or mission_failed or active_mission_id.is_empty():
+		return false
+	var mission := catalog.get_definition("mission", active_mission_id) as MissionDefinition
+	if mission == null:
+		return false
+	for requirement in mission.required_cargo:
+		if StringName(requirement.get("definition_id", "")) == item_id:
+			return true
+	return false
+
+
+func _fail_active_mission() -> void:
+	if mission_completed or mission_failed or active_mission_id.is_empty():
+		return
+	var planet := catalog.get_definition("planet", session.current_planet_id) as PlanetDefinition
+	if planet != null and planet.civilization_present:
+		var key := String(planet.system_id)
+		civilization_failures[key] = int(civilization_failures.get(key, 0)) + 1
+		if int(civilization_failures[key]) >= 5:
+			blocked_civilizations[key] = "fine_due"
+	mission_failed = true
+
+
+func civilization_access_status() -> String:
+	var planet := catalog.get_definition("planet", session.current_planet_id) as PlanetDefinition
+	if planet == null:
+		return ""
+	return String(blocked_civilizations.get(String(planet.system_id), ""))
+
+
+func pay_civilization_fine() -> Dictionary:
+	if not _at_civilization_hub() or civilization_access_status() != "fine_due":
+		return _failure("No civilization fine is due here.")
+	if credits < 1000:
+		return _failure("1,000 credits are required to clear this fine.")
+	credits -= 1000
+	var planet := catalog.get_definition("planet", session.current_planet_id) as PlanetDefinition
+	blocked_civilizations.erase(String(planet.system_id))
+	civilization_failures[String(planet.system_id)] = 0
+	status_updated.emit()
+	return {"ok": true, "reason": "Fine paid. Hub access restored."}
+
+
+func refuse_civilization_fine() -> Dictionary:
+	if not _at_civilization_hub() or civilization_access_status() != "fine_due":
+		return _failure("No civilization fine is due here.")
+	var planet := catalog.get_definition("planet", session.current_planet_id) as PlanetDefinition
+	blocked_civilizations[String(planet.system_id)] = "blocked"
+	status_updated.emit()
+	return {"ok": true, "reason": "Access to this civilization is permanently blocked."}
+
+
 func begin_combat(combat_id: StringName) -> Dictionary:
-	if not is_configured or session.state not in [GameSession.TravelState.TRAVELLING, GameSession.TravelState.EVENT_PAUSED]:
+	if not is_configured or session.state != GameSession.TravelState.TRAVELLING:
 		return _failure("Combat can only begin during travel.")
 	var definition := catalog.get_definition("combat", combat_id) as CombatDefinition
 	return combat.begin(definition)
 
 
 func activate_special_equipment() -> Dictionary:
+	if not _has_equipment_effect(&"absorb_projectile"):
+		return _failure("ASECA is not installed.")
 	return combat.activate_special_equipment()
+
+
+func defeat_enemy() -> Dictionary:
+	if not combat.active:
+		return _failure("There is no active hostile target.")
+	combat.enemy_defeated()
+	return {"ok": true, "reason": "Target neutralized."}
 
 
 func deliver_active_mission() -> Dictionary:
 	if not is_configured or session.state != GameSession.TravelState.DOCKED:
 		return _failure("Delivery can only be confirmed while docked.")
-	if mission_completed or active_mission_id.is_empty():
+	if mission_completed or mission_failed or active_mission_id.is_empty():
 		return _failure("There is no active delivery to complete.")
 	var mission := catalog.get_definition("mission", active_mission_id) as MissionDefinition
 	if mission == null or not mission.is_valid_definition():
@@ -228,6 +377,7 @@ func deliver_active_mission() -> Dictionary:
 			if instance != null and not instance.delivered and instance.definition != null and instance.definition.id == item_id:
 				carried += 1
 		if carried < int(required_counts[item_id]):
+			_fail_active_mission()
 			return _failure("Required cargo is not aboard: %s." % item_id)
 	for item_id in required_counts:
 		var remaining := int(required_counts[item_id])
@@ -265,6 +415,7 @@ func buy_market_item(item_id: StringName) -> Dictionary:
 			var placed := inventory.try_place(instance, cell, rotation)
 			if placed.valid:
 				credits -= definition.buy_price
+				_recalculate_equipment_bonuses()
 				_sync_inventory_save_data()
 				status_updated.emit()
 				return {"ok": true, "reason": "Item purchased and placed in the ship grid."}
@@ -279,9 +430,12 @@ func sell_inventory_item(instance_id: StringName) -> Dictionary:
 			continue
 		if instance.definition.sell_price < 0:
 			return _failure("This item cannot be sold here.")
+		if _is_required_mission_cargo(instance.definition.id):
+			_fail_active_mission()
 		credits += instance.definition.sell_price
-		reputation_xp += instance.definition.sell_reputation_delta
+		reputation_xp = maxi(0, reputation_xp + instance.definition.sell_reputation_delta)
 		inventory.remove_item(instance)
+		_recalculate_equipment_bonuses()
 		_sync_inventory_save_data()
 		status_updated.emit()
 		return {"ok": true, "reason": "Item sold."}
@@ -292,13 +446,13 @@ func _at_civilization_hub() -> bool:
 	if not is_configured or session.state != GameSession.TravelState.DOCKED:
 		return false
 	var planet := catalog.get_definition("planet", session.current_planet_id) as PlanetDefinition
-	return planet != null and planet.civilization_present
+	return planet != null and planet.civilization_present and civilization_access_status() != "blocked"
 
 
 func try_place_item(instance: ItemInstance, anchor: Vector2i, rotation_quarters: int) -> Dictionary:
 	if not is_configured:
 		return _failure(setup_status)
-	var travelling := session.state in [GameSession.TravelState.TRAVELLING, GameSession.TravelState.EVENT_PAUSED]
+	var travelling := session.state != GameSession.TravelState.DOCKED or combat.active
 	if not inventory.can_rearrange(travelling):
 		return _failure("Inventory cannot be rearranged while travelling.")
 	var result := inventory.try_place(instance, anchor, rotation_quarters)
@@ -312,6 +466,8 @@ func save_game(slot_index: int = 1) -> Dictionary:
 		return _failure(setup_status)
 	if slot_index < 1 or slot_index > MANUAL_SAVE_SLOTS:
 		return _failure("Choose a valid manual save slot.")
+	if session.state != GameSession.TravelState.DOCKED:
+		return _failure("Manual saves are only available while docked.")
 	_prepare_save("Save Slot %d" % slot_index)
 	var saved := session.save_game(_manual_slot_path(slot_index), _manual_previous_path(slot_index))
 	return {"ok": saved, "reason": "" if saved else "Save could not be written."}
@@ -353,8 +509,6 @@ func start_new_game() -> Dictionary:
 	if not is_configured:
 		return _failure(setup_status)
 	_reset_runtime_state()
-	_save_autosave()
-	_save_autosave()
 	status_updated.emit()
 	return {"ok": true, "reason": "New demo game started."}
 
@@ -412,7 +566,7 @@ func _load_game_path(path: String) -> Dictionary:
 	if not campaign_result.ok:
 		return campaign_result
 	_playtime_seconds = float(session._save_payload.get("playtime_seconds", 0.0))
-	_autosave_clock = 0.0
+	_event_clock = 0.0
 	combat.active = false
 	combat.definition = null
 	combat.elapsed_seconds = 0.0
@@ -429,12 +583,14 @@ func _prepare_save(slot_label: String) -> void:
 	session._save_payload["saved_at"] = Time.get_datetime_string_from_system()
 	session._save_payload["playtime_seconds"] = _playtime_seconds
 	session._save_payload["galaxy_markers"] = galaxy_markers.duplicate(true)
+	session._save_payload["civilization_failures"] = civilization_failures.duplicate(true)
+	session._save_payload["blocked_civilizations"] = blocked_civilizations.duplicate(true)
 
 
 
 func _save_autosave() -> bool:
 	_prepare_save("Autosave")
-	return session.save_game(GameSession.AUTOSAVE_PATH, GameSession.PREVIOUS_AUTOSAVE_PATH)
+	return session.save_game(GameSession.AUTOSAVE_PATH)
 
 
 func _manual_slot_path(slot_index: int) -> String:
@@ -448,17 +604,20 @@ func _manual_previous_path(slot_index: int) -> String:
 func _reset_runtime_state() -> void:
 	var ship := catalog.get_definition("ship", setup.starting_ship_id) as ShipDefinition
 	inventory.configure(ship)
-	for starting_item in setup.starting_items:
-		inventory.try_place(starting_item, starting_item.grid_position, starting_item.rotation_quarters)
+	for starting_item in _starting_item_templates:
+		var fresh_item := starting_item.duplicate(true) as ItemInstance
+		inventory.try_place(fresh_item, fresh_item.grid_position, fresh_item.rotation_quarters)
 	session.configure(setup.starting_planet_id, setup.starting_resource_values, setup.starting_hull_hp, {}, Callable(self, "_resolve_content"))
-	session._autosave_elapsed = 0.0
 	active_mission_id = setup.starting_mission_id
 	mission_completed = false
+	mission_failed = false
 	credits = setup.starting_credits
 	reputation_xp = 0
 	galaxy_markers.clear()
+	civilization_failures.clear()
+	blocked_civilizations.clear()
 	_playtime_seconds = 0.0
-	_autosave_clock = 0.0
+	_event_clock = 0.0
 	_market_instance_counter = 0
 	combat.active = false
 	combat.definition = null
@@ -483,30 +642,21 @@ func _on_combat_requested(combat_id: StringName) -> void:
 
 
 func _on_combat_started() -> void:
+	_combat_damage_clock = 0.0
 	combat_opened.emit()
 
 
 func _on_arrived(planet_id: StringName) -> void:
-	var planet := catalog.get_definition("planet", planet_id) as PlanetDefinition
-	if planet != null:
-		session.apply_planet_refill(planet)
 	arrival_completed.emit(planet_id)
 
 
 func _on_combat_resolved(_won_by: StringName) -> void:
+	_combat_damage_clock = 0.0
 	status_updated.emit()
 
 
 func _on_died() -> void:
-	var inventory_result := _restore_inventory()
-	var campaign_result := _restore_campaign_state()
-	if session.pending_event != null:
-		event_opened.emit(session.pending_event)
-	game_over.emit("Death occurred. The previous saved state was restored when available.")
-	if not inventory_result.ok:
-		push_warning(inventory_result.reason)
-	if not campaign_result.ok:
-		push_warning(campaign_result.reason)
+	game_over.emit("Ship lost. Choose New Game, Load Latest Save, or Load Save.")
 	status_updated.emit()
 
 
@@ -533,6 +683,7 @@ func _sync_inventory_save_data() -> void:
 	session._save_payload["reputation_xp"] = reputation_xp
 	session._save_payload["active_mission_id"] = String(active_mission_id)
 	session._save_payload["mission_completed"] = mission_completed
+	session._save_payload["mission_failed"] = mission_failed
 
 
 func _restore_inventory() -> Dictionary:
@@ -568,6 +719,7 @@ func _restore_inventory() -> Dictionary:
 				return _failure("Saved item placement is invalid: %s" % placed.reason)
 	inventory.items = restored_inventory.items
 	session.defense_pool = float(session._save_payload.get("defense_pool", 0.0))
+	_recalculate_equipment_bonuses()
 	return {"ok": true, "reason": ""}
 
 
@@ -579,10 +731,17 @@ func _restore_campaign_state() -> Dictionary:
 	reputation_xp = int(session._save_payload.get("reputation_xp", 0))
 	active_mission_id = loaded_mission_id
 	mission_completed = bool(session._save_payload.get("mission_completed", false))
+	mission_failed = bool(session._save_payload.get("mission_failed", false))
 	var saved_markers: Variant = session._save_payload.get("galaxy_markers", {})
 	if typeof(saved_markers) != TYPE_DICTIONARY:
 		return _failure("Saved map marker data is invalid.")
 	galaxy_markers = saved_markers.duplicate(true)
+	var saved_failures: Variant = session._save_payload.get("civilization_failures", {})
+	var saved_blocks: Variant = session._save_payload.get("blocked_civilizations", {})
+	if typeof(saved_failures) != TYPE_DICTIONARY or typeof(saved_blocks) != TYPE_DICTIONARY:
+		return _failure("Saved civilization access data is invalid.")
+	civilization_failures = saved_failures.duplicate(true)
+	blocked_civilizations = saved_blocks.duplicate(true)
 	return {"ok": true, "reason": ""}
 
 

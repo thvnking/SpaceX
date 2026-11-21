@@ -145,6 +145,12 @@ func load_markers(markers: Dictionary) -> void:
 	marker_types = markers.duplicate(true)
 	queue_redraw()
 
+
+func reset_view() -> void:
+	zoom = 1.0
+	offset = Vector2.ZERO
+	queue_redraw()
+
 func _draw_sigil(center: Vector2, index: int) -> void:
 	var color: Color = SIGIL_COLORS[posmod(index, SIGIL_COLORS.size())]
 	var r := 6.0

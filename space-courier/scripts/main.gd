@@ -6,6 +6,10 @@ const LINE := Color("27364b")
 const TEXT := Color("e7edf5")
 const MUTED := Color("91a2b8")
 const ACCENT := Color("65d6c4")
+const LIGHT_PANEL := Color("e8ece8", 0.90)
+const LIGHT_TEXT := Color("24333a")
+const LIGHT_MUTED := Color("62737a")
+const ICE := Color("55dce8")
 
 var page_stack: Control
 var header_bar: Control
@@ -39,6 +43,7 @@ var message_timer: Timer
 var combat_overlay: PanelContainer
 var combat_status_label: Label
 var combat_special_button: Button
+var combat_fire_button: Button
 var save_slots_list: VBoxContainer
 var save_page_title: Label
 var settings_master_slider: HSlider
@@ -51,6 +56,7 @@ var pending_delete_slot := -1
 var overwrite_dialog: ConfirmationDialog
 var pending_save_slot := -1
 var new_game_dialog: ConfirmationDialog
+var quit_dialog: ConfirmationDialog
 var pause_overlay: PanelContainer
 var mission_title_label: Label
 var mission_detail_label: Label
@@ -67,7 +73,7 @@ func _ready() -> void:
 	runtime.event_opened.connect(_show_event)
 	runtime.combat_opened.connect(_show_combat)
 	runtime.arrival_completed.connect(_on_arrival)
-	runtime.game_over.connect(_show_message)
+	runtime.game_over.connect(_show_death_page)
 	_build_interface()
 	_set_game_chrome(false)
 	_show_page("menu")
@@ -103,6 +109,7 @@ func _build_interface() -> void:
 	_build_menu_page()
 	_build_settings_page()
 	_build_saves_page()
+	_build_death_page()
 	_build_credits_page()
 	_build_event_overlay()
 	_build_combat_overlay()
@@ -349,6 +356,22 @@ func _build_map_page() -> void:
 	side.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	side.add_theme_constant_override("separation", 10)
 	content.add_child(side)
+	var map_controls := HBoxContainer.new()
+	map_controls.add_theme_constant_override("separation", 6)
+	var reset_view := _header_button("RESET VIEW")
+	reset_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reset_view.tooltip_text = "Reset zoom and pan to the full sector."
+	reset_view.pressed.connect(func(): galaxy_map.reset_view())
+	map_controls.add_child(reset_view)
+	var current_view := _header_button("CURRENT SYSTEM")
+	current_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	current_view.pressed.connect(func():
+		galaxy_map.selected = galaxy_map.current_index
+		galaxy_map.reset_view()
+		galaxy_map.system_selected.emit(galaxy_map.selected)
+	)
+	map_controls.add_child(current_view)
+	column.add_child(map_controls)
 	var detail_panel := _panel()
 	side.add_child(detail_panel)
 	var detail_body := VBoxContainer.new()
@@ -390,7 +413,7 @@ func _on_map_system_selected(index: int) -> void:
 	if index < 0 or index >= GalaxyMapView.SYSTEMS.size():
 		return
 	selected_system_label.text = GalaxyMapView.SYSTEMS[index].name
-	selected_system_detail.text = "%d PLANETS · MARS COLONY%s" % [GalaxyMapView.SYSTEMS[index].planets.size(), " · CURRENT SYSTEM" if index == galaxy_map.current_index else ""]
+	selected_system_detail.text = "%d PLANETS · MARS COLONY%s%s" % [GalaxyMapView.SYSTEMS[index].planets.size(), " · CURRENT SYSTEM" if index == galaxy_map.current_index else "", " · SELECTED" if index == galaxy_map.selected else ""]
 	_refresh_map()
 
 
@@ -473,47 +496,77 @@ func _build_hub_page() -> void:
 
 func _build_menu_page() -> void:
 	var page := _new_page("menu")
-	var center := CenterContainer.new()
-	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	page.add_child(center)
-	var panel := _panel()
-	panel.custom_minimum_size = Vector2(440, 560)
-	center.add_child(panel)
+	var backdrop := MenuBackdrop.new()
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	page.add_child(backdrop)
+	var layout := HBoxContainer.new()
+	layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layout.add_theme_constant_override("separation", 24)
+	layout.add_theme_constant_override("margin_left", 42)
+	layout.add_theme_constant_override("margin_right", 42)
+	layout.add_theme_constant_override("margin_top", 34)
+	layout.add_theme_constant_override("margin_bottom", 30)
+	page.add_child(layout)
+	var story := VBoxContainer.new()
+	story.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	story.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	story.alignment = BoxContainer.ALIGNMENT_END
+	story.add_theme_constant_override("separation", 9)
+	layout.add_child(story)
+	story.add_child(_label("SPACE COURIER  /  DEEP SPACE", 11, Color("d8f6f5"), true))
+	story.add_child(_label("Một mái nhà\ngiữa những vì sao.", 30, Color("f4f3ec"), true))
+	story.add_child(_label("Du hành xa hơn. Khám phá theo cách của bạn.", 13, Color("d5e3e2")))
+	var story_gap := Control.new()
+	story_gap.custom_minimum_size.y = 22
+	story.add_child(story_gap)
+	story.add_child(_label("01  /  HÀNH TRÌNH ĐANG CHỜ", 9, Color("c2d3d0"), true))
+	var menu_panel := PanelContainer.new()
+	menu_panel.custom_minimum_size = Vector2(340, 0)
+	menu_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var menu_style := _style(Color("f0f1eb", 0.90), Color("ffffff", 0.75), 0, 1)
+	menu_style.shadow_color = Color("07131b", 0.2)
+	menu_style.shadow_size = 18
+	menu_panel.add_theme_stylebox_override("panel", menu_style)
+	layout.add_child(menu_panel)
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 14)
-	content.add_theme_constant_override("margin_left", 38)
-	content.add_theme_constant_override("margin_right", 38)
-	content.add_theme_constant_override("margin_top", 34)
-	content.add_theme_constant_override("margin_bottom", 34)
-	panel.add_child(content)
-	content.add_child(_label("SPACE COURIER", 28, TEXT, true))
-	content.add_child(_label("A small demo of travel, cargo and ship management", 12, MUTED))
-	var spacer := Control.new()
-	spacer.custom_minimum_size.y = 12
-	content.add_child(spacer)
-	content.add_child(_menu_button("NEW GAME", _confirm_new_game))
-	content.add_child(_menu_button("CONTINUE", _continue_game))
-	content.add_child(_menu_button("LOAD GAME", _open_load_page))
-	content.add_child(_menu_button("SETTINGS", _open_settings))
-	content.add_child(_menu_button("CREDITS", _open_credits))
-	content.add_child(_menu_button("QUIT", _quit_game))
-	var footer := _label("DEMO SCENARIO · PLACEHOLDER ARTWORK", 10, MUTED, true)
-	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	content.add_theme_constant_override("separation", 10)
+	content.add_theme_constant_override("margin_left", 24)
+	content.add_theme_constant_override("margin_right", 24)
+	content.add_theme_constant_override("margin_top", 25)
+	content.add_theme_constant_override("margin_bottom", 20)
+	menu_panel.add_child(content)
+	content.add_child(_label("TRẠM ĐIỀU HƯỚNG", 10, LIGHT_MUTED, true))
+	content.add_child(_label("Bắt đầu hành trình", 21, LIGHT_TEXT, true))
+	var divider := ColorRect.new()
+	divider.color = Color(ICE, 0.7)
+	divider.custom_minimum_size.y = 1
+	content.add_child(divider)
+	content.add_child(_menu_button("BẮT ĐẦU MỚI", _confirm_new_game, true))
+	content.add_child(_menu_button("TIẾP TỤC", _continue_game))
+	content.add_child(_menu_button("TẢI LƯU GAME", _open_load_page))
+	var menu_gap := Control.new()
+	menu_gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.add_child(menu_gap)
+	content.add_child(_menu_button("CÀI ĐẶT", _open_settings))
+	content.add_child(_menu_button("THÔNG TIN", _open_credits))
+	content.add_child(_menu_button("THOÁT GAME", _quit_game))
+	var footer := _label("SPACE COURIER   ·   PHIÊN BẢN THỬ NGHIỆM", 8, LIGHT_MUTED, true)
 	content.add_child(footer)
 
 
 func _build_settings_page() -> void:
 	var page := _new_page("settings")
+	_add_light_page_backdrop(page)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 16)
 	page.add_child(column)
 	var heading := HBoxContainer.new()
-	heading.add_child(_label("SETTINGS", 20, TEXT, true))
+	heading.add_child(_label("CÀI ĐẶT", 20, LIGHT_TEXT, true))
 	var heading_spacer := Control.new()
 	heading_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	heading.add_child(heading_spacer)
-	var back := _header_button("BACK")
+	var back := _header_button("QUAY LẠI")
+	_style_light_button(back)
 	back.pressed.connect(_return_from_settings)
 	heading.add_child(back)
 	column.add_child(heading)
@@ -521,6 +574,7 @@ func _build_settings_page() -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(scroll)
 	var panel := _panel()
+	panel.add_theme_stylebox_override("panel", _style(LIGHT_PANEL, Color("ffffff", 0.9), 0, 1))
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(panel)
@@ -531,42 +585,45 @@ func _build_settings_page() -> void:
 	content.add_theme_constant_override("margin_top", 24)
 	content.add_theme_constant_override("margin_bottom", 24)
 	panel.add_child(content)
-	content.add_child(_label("AUDIO", 12, ACCENT, true))
-	settings_master_slider = _setting_slider(content, "Master volume", "master_volume")
-	settings_music_slider = _setting_slider(content, "Music volume", "music_volume")
-	settings_sfx_slider = _setting_slider(content, "Effects volume", "sfx_volume")
-	content.add_child(_label("DISPLAY", 12, ACCENT, true))
+	content.add_child(_label("ÂM THANH", 12, ICE, true))
+	settings_master_slider = _setting_slider(content, "Âm lượng tổng", "master_volume")
+	settings_music_slider = _setting_slider(content, "Âm lượng nhạc", "music_volume")
+	settings_sfx_slider = _setting_slider(content, "Hiệu ứng âm thanh", "sfx_volume")
+	content.add_child(_label("HIỂN THỊ", 12, ICE, true))
 	settings_resolution = OptionButton.new()
 	for resolution in ["1280 × 720", "1440 × 900", "1920 × 1080"]:
 		settings_resolution.add_item(resolution)
 	settings_resolution.item_selected.connect(_on_resolution_selected)
-	content.add_child(_setting_option("Window resolution", settings_resolution))
+	content.add_child(_setting_option("Độ phân giải", settings_resolution))
 	settings_window_mode = OptionButton.new()
-	for mode in ["Windowed", "Fullscreen", "Borderless"]:
+	for mode in ["Cửa sổ", "Toàn màn hình", "Không viền"]:
 		settings_window_mode.add_item(mode)
 	settings_window_mode.item_selected.connect(_on_window_mode_selected)
-	content.add_child(_setting_option("Display mode", settings_window_mode))
-	content.add_child(_label("CONTROLS", 12, ACCENT, true))
-	content.add_child(_label("Mouse: select and place items · R: rotate selected item · Escape: pause", 12, MUTED))
+	content.add_child(_setting_option("Chế độ hiển thị", settings_window_mode))
+	content.add_child(_label("ĐIỀU KHIỂN", 12, ICE, true))
+	content.add_child(_label("Chuột: chọn và đặt vật phẩm  ·  R: xoay  ·  Esc: tạm dừng", 12, LIGHT_MUTED))
 	_load_settings()
 
 
 func _build_saves_page() -> void:
 	var page := _new_page("saves")
+	_add_light_page_backdrop(page)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 16)
 	page.add_child(column)
 	var heading := HBoxContainer.new()
-	save_page_title = _label("LOAD GAME", 20, TEXT, true)
+	save_page_title = _label("TẢI LƯU GAME", 20, LIGHT_TEXT, true)
 	heading.add_child(save_page_title)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	heading.add_child(spacer)
-	var back := _header_button("BACK")
+	var back := _header_button("QUAY LẠI")
+	_style_light_button(back)
 	back.pressed.connect(_return_from_saves)
 	heading.add_child(back)
 	column.add_child(heading)
 	var panel := _panel()
+	panel.add_theme_stylebox_override("panel", _style(Color("e8ece8", 0.84), Color("ffffff", 0.8), 0, 1))
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(panel)
 	var scroll := ScrollContainer.new()
@@ -575,17 +632,55 @@ func _build_saves_page() -> void:
 	save_slots_list = VBoxContainer.new()
 	save_slots_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	save_slots_list.add_theme_constant_override("separation", 12)
-	scroll.add_child(save_slots_list)
+	var save_margin := MarginContainer.new()
+	save_margin.add_theme_constant_override("margin_left", 20)
+	save_margin.add_theme_constant_override("margin_right", 20)
+	save_margin.add_theme_constant_override("margin_top", 18)
+	save_margin.add_theme_constant_override("margin_bottom", 18)
+	save_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	save_margin.add_child(save_slots_list)
+	scroll.add_child(save_margin)
 	delete_dialog = ConfirmationDialog.new()
-	delete_dialog.title = "Delete Save"
-	delete_dialog.dialog_text = "Delete this save slot? This action cannot be undone."
+	delete_dialog.title = "Xóa dữ liệu lưu"
+	delete_dialog.dialog_text = "Xóa ô lưu này? Thao tác này không thể hoàn tác."
 	delete_dialog.confirmed.connect(_confirm_delete_save)
 	add_child(delete_dialog)
 	overwrite_dialog = ConfirmationDialog.new()
-	overwrite_dialog.title = "Overwrite Save"
-	overwrite_dialog.dialog_text = "Replace the saved data in this slot?"
+	overwrite_dialog.title = "Ghi đè dữ liệu lưu"
+	overwrite_dialog.dialog_text = "Thay thế dữ liệu hiện có trong ô lưu này?"
 	overwrite_dialog.confirmed.connect(_confirm_overwrite_save)
 	add_child(overwrite_dialog)
+
+
+func _build_death_page() -> void:
+	var page := _new_page("death")
+	var center := CenterContainer.new()
+	page.add_child(center)
+	var panel := _panel()
+	panel.custom_minimum_size = Vector2(460, 0)
+	center.add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 14)
+	content.add_theme_constant_override("margin_left", 28)
+	content.add_theme_constant_override("margin_right", 28)
+	content.add_theme_constant_override("margin_top", 28)
+	content.add_theme_constant_override("margin_bottom", 28)
+	panel.add_child(content)
+	content.add_child(_label("SHIP LOST", 24, Color("ff9e9e"), true))
+	content.add_child(_label("Your ship can no longer continue. Choose how to resume.", 12, MUTED))
+	var new_game := _header_button("NEW GAME")
+	new_game.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	new_game.pressed.connect(_start_new_game)
+	content.add_child(new_game)
+	var latest := _header_button("LOAD LATEST SAVE")
+	latest.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	latest.pressed.connect(_continue_game)
+	content.add_child(latest)
+	var load_save := _header_button("LOAD SAVE")
+	load_save.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	load_save.pressed.connect(_open_load_page)
+	content.add_child(load_save)
 
 
 func _build_credits_page() -> void:
@@ -611,7 +706,7 @@ func _build_pause_overlay() -> void:
 	pause_overlay.custom_minimum_size = Vector2(420, 460)
 	pause_overlay.visible = false
 	pause_overlay.process_mode = Node.PROCESS_MODE_ALWAYS
-	pause_overlay.add_theme_stylebox_override("panel", _style(PANEL, ACCENT, 10, 1))
+	pause_overlay.add_theme_stylebox_override("panel", _style(LIGHT_PANEL, Color("ffffff"), 0, 1))
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 14)
 	content.add_theme_constant_override("margin_left", 32)
@@ -619,11 +714,11 @@ func _build_pause_overlay() -> void:
 	content.add_theme_constant_override("margin_top", 30)
 	content.add_theme_constant_override("margin_bottom", 30)
 	pause_overlay.add_child(content)
-	content.add_child(_label("PAUSED", 22, TEXT, true))
-	content.add_child(_menu_button("RESUME", _resume_game))
-	content.add_child(_menu_button("SAVE GAME", func(): _open_save_page("pause_save")))
-	content.add_child(_menu_button("SETTINGS", _open_settings))
-	content.add_child(_menu_button("MAIN MENU", _return_to_main_menu))
+	content.add_child(_label("TẠM DỪNG", 22, LIGHT_TEXT, true))
+	content.add_child(_menu_button("TIẾP TỤC", _resume_game))
+	content.add_child(_menu_button("LƯU GAME", func(): _open_save_page("pause_save")))
+	content.add_child(_menu_button("CÀI ĐẶT", _open_settings))
+	content.add_child(_menu_button("VỀ MENU CHÍNH", _return_to_main_menu))
 	add_child(pause_overlay)
 
 
@@ -633,25 +728,62 @@ func _build_dialogs() -> void:
 	new_game_dialog.dialog_text = "Start a new demo? The current autosave will be replaced. Manual save slots will remain."
 	new_game_dialog.confirmed.connect(_start_new_game)
 	add_child(new_game_dialog)
+	new_game_dialog.title = "Bắt đầu hành trình mới"
+	new_game_dialog.dialog_text = "Bắt đầu hành trình mới? Dữ liệu tự lưu hiện tại sẽ được thay thế. Các ô lưu thủ công vẫn được giữ lại."
+	quit_dialog = ConfirmationDialog.new()
+	quit_dialog.title = "Thoát Space Courier"
+	quit_dialog.dialog_text = "Bạn có chắc muốn thoát game không?"
+	quit_dialog.confirmed.connect(_confirm_quit_game)
+	add_child(quit_dialog)
+	_style_light_dialog(new_game_dialog)
+	_style_light_dialog(quit_dialog)
+	_style_light_dialog(delete_dialog)
+	_style_light_dialog(overwrite_dialog)
 
 
-func _menu_button(caption: String, callback: Callable) -> Button:
+func _menu_button(caption: String, callback: Callable, primary := false) -> Button:
 	var button := Button.new()
 	button.text = caption
-	button.custom_minimum_size = Vector2(340, 48)
+	button.custom_minimum_size = Vector2(270, 44)
 	button.focus_mode = Control.FOCUS_NONE
 	button.add_theme_font_size_override("font_size", 13)
-	button.add_theme_color_override("font_color", TEXT)
-	button.add_theme_stylebox_override("normal", _style(PANEL_LIGHT, LINE, 6, 1))
-	button.add_theme_stylebox_override("hover", _style(Color("20334b"), ACCENT, 6, 1))
+	button.add_theme_color_override("font_color", LIGHT_TEXT)
+	button.add_theme_color_override("font_hover_color", LIGHT_TEXT)
+	button.add_theme_stylebox_override("normal", _style(Color("ffffff", 0.56) if not primary else Color("baf4f2", 0.88), Color("aab8b8", 0.70) if not primary else ICE, 0, 1))
+	button.add_theme_stylebox_override("hover", _style(Color("d5f7f5", 0.95), ICE, 0, 1))
 	button.pressed.connect(callback)
 	return button
+
+
+func _style_light_button(button: Button) -> void:
+	button.add_theme_color_override("font_color", LIGHT_TEXT)
+	button.add_theme_color_override("font_hover_color", LIGHT_TEXT)
+	button.add_theme_stylebox_override("normal", _style(Color("f1f3ee", 0.92), Color("afc0c1"), 0, 1))
+	button.add_theme_stylebox_override("hover", _style(Color("d5f7f5"), ICE, 0, 1))
+
+
+func _style_light_dialog(dialog: ConfirmationDialog) -> void:
+	dialog.add_theme_color_override("font_color", LIGHT_TEXT)
+	dialog.add_theme_stylebox_override("panel", _style(Color("e8ece8"), Color("ffffff"), 0, 1))
+	dialog.get_ok_button().text = "XÁC NHẬN"
+	dialog.get_cancel_button().text = "HỦY"
+	_style_light_button(dialog.get_ok_button())
+	_style_light_button(dialog.get_cancel_button())
+
+
+func _add_light_page_backdrop(page: Control) -> void:
+	var backdrop := ColorRect.new()
+	backdrop.color = Color("cbd5d3", 0.96)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page.add_child(backdrop)
+	page.move_child(backdrop, 0)
 
 
 func _setting_slider(parent: VBoxContainer, caption: String, key: String) -> HSlider:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 20)
-	row.add_child(_label(caption, 12, TEXT))
+	row.add_child(_label(caption, 12, LIGHT_TEXT))
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(spacer)
@@ -661,6 +793,8 @@ func _setting_slider(parent: VBoxContainer, caption: String, key: String) -> HSl
 	slider.step = 0.05
 	slider.custom_minimum_size.x = 300
 	slider.value = 1.0
+	slider.add_theme_color_override("grabber_area", ICE)
+	slider.add_theme_color_override("grabber_area_highlight", Color("a7f3f4"))
 	slider.value_changed.connect(_on_audio_setting_changed.bind(key))
 	row.add_child(slider)
 	parent.add_child(row)
@@ -670,11 +804,15 @@ func _setting_slider(parent: VBoxContainer, caption: String, key: String) -> HSl
 func _setting_option(caption: String, option: OptionButton) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 20)
-	row.add_child(_label(caption, 12, TEXT))
+	row.add_child(_label(caption, 12, LIGHT_TEXT))
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(spacer)
 	option.custom_minimum_size.x = 300
+	option.add_theme_color_override("font_color", LIGHT_TEXT)
+	option.add_theme_color_override("font_hover_color", LIGHT_TEXT)
+	option.add_theme_stylebox_override("normal", _style(Color("f5f6f1"), Color("bbc7c6"), 0, 1))
+	option.add_theme_stylebox_override("hover", _style(Color("e0f7f5"), ICE, 0, 1))
 	row.add_child(option)
 	return row
 
@@ -842,6 +980,10 @@ func _build_combat_overlay() -> void:
 	combat_special_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	combat_special_button.pressed.connect(_activate_special)
 	content.add_child(combat_special_button)
+	combat_fire_button = _header_button("FIRE ON TARGET")
+	combat_fire_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	combat_fire_button.pressed.connect(_fire_on_target)
+	content.add_child(combat_fire_button)
 	add_child(combat_overlay)
 
 
@@ -1008,6 +1150,8 @@ func _refresh_map() -> void:
 		if route != null:
 			button.pressed.connect(_begin_travel.bind(route.id))
 		route_list.add_child(button)
+	if route_list.get_child_count() == 0:
+		route_list.add_child(_label("No planets are registered in this system.", 11, MUTED))
 
 
 func _refresh_inventory_count() -> void:
@@ -1038,9 +1182,9 @@ func _refresh_orders() -> void:
 		var item := runtime.catalog.get_definition("item", item_id) as ItemDefinition
 		var item_name := item.display_name if item != null else String(item_id)
 		cargo_lines.append("%s × %d" % [item_name, int(requirement.get("quantity", 0))])
-	var completion_text := "COMPLETED" if runtime.mission_completed else "ACTIVE"
+	var completion_text := "COMPLETED" if runtime.mission_completed else "FAILED" if runtime.mission_failed else "ACTIVE"
 	mission_detail_label.text = "%s · Deliver to %s\nRequired cargo: %s\nReward: %s credits" % [completion_text, target_name, ", ".join(cargo_lines), str(mission.reward_data.get("credits", 0))]
-	delivery_button.disabled = runtime.mission_completed or runtime.session.current_planet_id != mission.delivery_target_planet_id or runtime.session.state != GameSession.TravelState.DOCKED
+	delivery_button.disabled = runtime.mission_completed or runtime.mission_failed or runtime.session.current_planet_id != mission.delivery_target_planet_id or runtime.session.state != GameSession.TravelState.DOCKED
 
 
 func _refresh_hub() -> void:
@@ -1059,6 +1203,16 @@ func _refresh_hub() -> void:
 		return
 	hub_location_label.text = planet.display_name
 	hub_credits_label.text = "Credits: %d · Reputation XP: %d" % [runtime.credits, runtime.reputation_xp]
+	if runtime.civilization_access_status() == "fine_due":
+		hub_market_list.add_child(_label("Five failed deliveries: pay 1,000 credits or accept permanent refusal.", 11, Color("ffb18a")))
+		var pay_fine := _header_button("PAY FINE · 1000 CREDITS")
+		pay_fine.disabled = runtime.credits < 1000
+		pay_fine.pressed.connect(_pay_civilization_fine)
+		hub_market_list.add_child(pay_fine)
+		var refuse := _header_button("REFUSE · LOSE ACCESS")
+		refuse.pressed.connect(_refuse_civilization_fine)
+		hub_market_list.add_child(refuse)
+		return
 	hub_market_list.add_child(_label("SHOP STOCK", 10, MUTED, true))
 	for item_id in planet.market_item_ids:
 		var definition := runtime.catalog.get_definition("item", item_id) as ItemDefinition
@@ -1155,12 +1309,13 @@ func _open_save_page(source: String) -> void:
 func _refresh_save_slots() -> void:
 	if not is_instance_valid(save_slots_list):
 		return
-	save_page_title.text = "SAVE GAME" if save_page_mode == "save" else "LOAD GAME"
+	save_page_title.text = "LƯU GAME" if save_page_mode == "save" else "TẢI LƯU GAME"
 	for child in save_slots_list.get_children():
 		child.queue_free()
 	for slot_index in range(0, GameRuntime.MANUAL_SAVE_SLOTS + 1):
 		var info := runtime.get_save_slot_info(slot_index)
 		var card := _panel()
+		card.add_theme_stylebox_override("panel", _style(Color("f4f5ef", 0.94), Color("c5d0cf"), 0, 1))
 		save_slots_list.add_child(card)
 		var body := VBoxContainer.new()
 		body.add_theme_constant_override("separation", 8)
@@ -1169,36 +1324,39 @@ func _refresh_save_slots() -> void:
 		body.add_theme_constant_override("margin_top", 14)
 		body.add_theme_constant_override("margin_bottom", 14)
 		card.add_child(body)
-		var title := "AUTOSAVE" if slot_index == 0 else "SAVE SLOT %d" % slot_index
-		body.add_child(_label(title, 12, ACCENT, true))
-		var details := "Empty slot"
+		var title := "TỰ ĐỘNG LƯU" if slot_index == 0 else "Ô LƯU %d" % slot_index
+		body.add_child(_label(title, 12, ICE, true))
+		var details := "Ô lưu còn trống"
 		if info.exists:
 			var planet := runtime.catalog.get_definition("planet", StringName(info.planet_id)) as PlanetDefinition
 			var planet_name := planet.display_name if planet != null else String(info.planet_id)
-			var mission_state := "Mission complete" if info.mission_completed else "Mission in progress"
+			var mission_state := "Hoàn thành nhiệm vụ" if info.mission_completed else "Nhiệm vụ đang thực hiện"
 			var playtime_minutes := int(float(info.get("playtime_seconds", 0.0)) / 60.0)
-			details = "%s · %s · %d min · %d credits · %s" % [planet_name, info.saved_at, playtime_minutes, info.credits, mission_state]
-		var detail_label := _label(details, 11, MUTED)
+			details = "%s · %s · %d phút · %d tín dụng · %s" % [planet_name, info.saved_at, playtime_minutes, info.credits, mission_state]
+		var detail_label := _label(details, 11, LIGHT_MUTED)
 		detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		body.add_child(detail_label)
 		var actions := HBoxContainer.new()
 		actions.add_theme_constant_override("separation", 8)
 		body.add_child(actions)
 		if slot_index == 0:
-			var autosave_note := _label("Automatically updated every five minutes", 10, MUTED)
+			var autosave_note := _label("Checkpoint trước mỗi chuyến bay", 10, LIGHT_MUTED)
 			actions.add_child(autosave_note)
 			if save_page_mode == "load":
-				var load_auto := _header_button("LOAD")
+				var load_auto := _header_button("TẢI")
+				_style_light_button(load_auto)
 				load_auto.disabled = not info.exists
 				load_auto.pressed.connect(_choose_save_slot.bind(0))
 				actions.add_child(load_auto)
 		else:
-			var action := _header_button("SAVE" if save_page_mode == "save" else "LOAD")
+			var action := _header_button("LƯU" if save_page_mode == "save" else "TẢI")
+			_style_light_button(action)
 			action.disabled = save_page_mode == "load" and not info.exists
 			action.pressed.connect(_choose_save_slot.bind(slot_index))
 			actions.add_child(action)
 			if info.exists:
-				var delete := _header_button("DELETE")
+				var delete := _header_button("XÓA")
+				_style_light_button(delete)
 				delete.pressed.connect(_ask_delete_save.bind(slot_index))
 				actions.add_child(delete)
 
@@ -1207,7 +1365,7 @@ func _choose_save_slot(slot_index: int) -> void:
 	if save_page_mode == "save":
 		if runtime.get_save_slot_info(slot_index).exists:
 			pending_save_slot = slot_index
-			overwrite_dialog.dialog_text = "Replace the saved data in Save Slot %d?" % slot_index
+			overwrite_dialog.dialog_text = "Thay thế dữ liệu hiện có trong ô lưu %d?" % slot_index
 			overwrite_dialog.popup_centered()
 			return
 		_perform_slot_save(slot_index)
@@ -1243,7 +1401,7 @@ func _confirm_overwrite_save() -> void:
 
 func _ask_delete_save(slot_index: int) -> void:
 	pending_delete_slot = slot_index
-	delete_dialog.dialog_text = "Delete Save Slot %d? This action cannot be undone." % slot_index
+	delete_dialog.dialog_text = "Xóa ô lưu %d? Thao tác này không thể hoàn tác." % slot_index
 	delete_dialog.popup_centered()
 
 
@@ -1340,21 +1498,28 @@ func _return_to_main_menu() -> void:
 	get_tree().paused = false
 	pause_overlay.visible = false
 	event_overlay.visible = false
-	runtime.save_autosave()
 	runtime.gameplay_active = false
 	_set_game_chrome(false)
 	_show_page("menu")
 
 
 func _quit_game() -> void:
+	quit_dialog.popup_centered()
+
+
+func _confirm_quit_game() -> void:
 	get_tree().quit()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE and runtime.gameplay_active:
-		pause_overlay.visible = true
-		runtime.gameplay_active = false
-		get_tree().paused = true
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_1 and runtime.gameplay_active and runtime.combat.active:
+			_activate_special()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_ESCAPE and runtime.gameplay_active:
+			pause_overlay.visible = true
+			runtime.gameplay_active = false
+			get_tree().paused = true
 
 
 func _show_event(event: EventDefinition) -> void:
@@ -1378,14 +1543,42 @@ func _refresh_combat() -> void:
 		combat_overlay.visible = false
 		return
 	combat_overlay.visible = true
-	combat_status_label.text = "%d threat(s) · attack ends in %.1f s" % [runtime.combat.enemies_remaining, runtime.combat.remaining_seconds()]
+	combat_status_label.text = "%d threat(s) orbiting the ship · attack ends in %.1f s" % [runtime.combat.enemies_remaining, runtime.combat.remaining_seconds()]
 	combat_special_button.disabled = not runtime.combat.definition.special_equipment_can_resolve
+	combat_fire_button.disabled = runtime.combat.enemies_remaining <= 0
 
 
 func _activate_special() -> void:
 	var result := runtime.activate_special_equipment()
 	if not result.ok:
 		_show_message(result.reason)
+
+
+func _fire_on_target() -> void:
+	var result := runtime.defeat_enemy()
+	if not result.ok:
+		_show_message(result.reason)
+
+
+func _pay_civilization_fine() -> void:
+	var result := runtime.pay_civilization_fine()
+	_show_message(result.reason)
+
+
+func _refuse_civilization_fine() -> void:
+	var result := runtime.refuse_civilization_fine()
+	_show_message(result.reason)
+
+
+func _show_death_page(message: String) -> void:
+	get_tree().paused = false
+	pause_overlay.visible = false
+	event_overlay.visible = false
+	combat_overlay.visible = false
+	runtime.gameplay_active = false
+	_set_game_chrome(false)
+	_show_page("death")
+	_show_message(message)
 
 
 func _choose_event(choice_index: int) -> void:
@@ -1502,6 +1695,59 @@ func _style(fill: Color, border: Color, radius: int, border_size: int) -> StyleB
 	style.set_border_width_all(border_size)
 	style.set_corner_radius_all(radius)
 	return style
+
+
+class MenuBackdrop extends Control:
+	func _draw() -> void:
+		var w := size.x
+		var h := size.y
+		draw_rect(Rect2(Vector2.ZERO, size), Color("111c26"), true)
+		# Soft atmospheric bands keep the menu cinematic without competing with text.
+		draw_rect(Rect2(0, h * 0.58, w, h * 0.42), Color("1c3038"), true)
+		draw_rect(Rect2(0, h * 0.77, w, h * 0.23), Color("18252c"), true)
+		for i in 64:
+			var x := fposmod(float(i * 173 + 31), maxf(w, 1.0))
+			var y := fposmod(float(i * 97 + 13), maxf(h * 0.76, 1.0))
+			var radius := 0.7 + float(i % 3) * 0.35
+			draw_circle(Vector2(x, y), radius, Color("d8e8e2", 0.40 + float(i % 4) * 0.12))
+		var planet_center := Vector2(w * 0.52, h * 0.43)
+		var planet_radius := minf(w * 0.19, h * 0.29)
+		draw_circle(planet_center, planet_radius * 1.08, Color("83d6d0", 0.08))
+		draw_circle(planet_center, planet_radius, Color("516c75"))
+		draw_arc(planet_center, planet_radius, PI * 1.05, PI * 1.93, 64, Color("b6e5dc", 0.72), 1.5, true)
+		draw_arc(planet_center, planet_radius * 0.92, PI * 0.04, PI * 0.94, 48, Color("243a47", 0.82), 2.0, true)
+		# Angular land bands give the celestial body a restrained illustrated character.
+		var land := PackedVector2Array([
+			planet_center + Vector2(-planet_radius * 0.78, -planet_radius * 0.05),
+			planet_center + Vector2(-planet_radius * 0.30, -planet_radius * 0.45),
+			planet_center + Vector2(planet_radius * 0.04, -planet_radius * 0.28),
+			planet_center + Vector2(planet_radius * 0.30, -planet_radius * 0.02),
+			planet_center + Vector2(planet_radius * 0.72, planet_radius * 0.12),
+			planet_center + Vector2(planet_radius * 0.38, planet_radius * 0.37),
+			planet_center + Vector2(-planet_radius * 0.08, planet_radius * 0.28),
+			planet_center + Vector2(-planet_radius * 0.45, planet_radius * 0.48)
+		])
+		draw_colored_polygon(land, Color("78918d", 0.48))
+		# Distant courier silhouette, framed by thin cyan navigation marks.
+		var ship_center := Vector2(w * 0.39, h * 0.68)
+		var ship := PackedVector2Array([
+			ship_center + Vector2(-94, 5), ship_center + Vector2(-34, -12),
+			ship_center + Vector2(54, -8), ship_center + Vector2(102, 2),
+			ship_center + Vector2(49, 11), ship_center + Vector2(-41, 13)
+		])
+		draw_colored_polygon(ship, Color("d8e4dc", 0.86))
+		var window_shape := PackedVector2Array([
+			ship_center + Vector2(-19, -8), ship_center + Vector2(25, -7),
+			ship_center + Vector2(35, 0), ship_center + Vector2(-14, 1)
+		])
+		draw_colored_polygon(window_shape, Color("6ac9d0", 0.88))
+		draw_line(ship_center + Vector2(-72, 19), ship_center + Vector2(70, 19), Color("d7f8f2", 0.36), 1.0)
+		draw_circle(ship_center + Vector2(-59, 13), 3.0, Color("f5ad72", 0.92))
+		draw_circle(ship_center + Vector2(59, 13), 3.0, Color("f5ad72", 0.92))
+		var corners := [Vector2(w * 0.08, h * 0.22), Vector2(w * 0.69, h * 0.16), Vector2(w * 0.13, h * 0.77)]
+		for corner in corners:
+			draw_line(corner, corner + Vector2(22, 0), Color("91e6e5", 0.56), 1.0)
+			draw_line(corner, corner + Vector2(0, 16), Color("91e6e5", 0.56), 1.0)
 
 
 class ShipyardSilhouette extends Control:

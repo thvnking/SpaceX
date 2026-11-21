@@ -8,12 +8,11 @@ signal combat_requested(combat_id: StringName)
 signal died
 signal arrived(planet_id: StringName)
 
-enum TravelState { DOCKED, TRAVELLING, EVENT_PAUSED, DEAD }
+enum TravelState { DOCKED, TRAVELLING, EVENT_PAUSED, STRANDED, DEAD }
 
 const AUTOSAVE_PATH := "user://space_courier_autosave.json"
 const PREVIOUS_AUTOSAVE_PATH := "user://space_courier_previous_autosave.json"
 const LEGACY_SAVE_PATH := "user://space_courier_save.json"
-const AUTOSAVE_INTERVAL_SECONDS := 300.0
 
 var state: TravelState = TravelState.DOCKED
 var current_planet_id: StringName
@@ -24,21 +23,20 @@ var travel: TravelDefinition
 var travel_elapsed := 0.0
 var travel_segment_index := 0
 var pending_event: EventDefinition
-var _autosave_elapsed := 0.0
 var _save_payload: Dictionary = {}
 var content_lookup: Callable
+var max_resources: Dictionary = {"food": 100.0, "fuel": 100.0}
 
 
 func configure(initial_planet_id: StringName, initial_resources: Dictionary, initial_hull_hp: float, save_payload: Dictionary = {}, resolver: Callable = Callable()) -> void:
 	current_planet_id = initial_planet_id
 	resources = initial_resources.duplicate(true)
 	hull_hp = initial_hull_hp
-	defense_pool = 0.0
+	defense_pool = 3.0
 	travel = null
 	travel_elapsed = 0.0
 	travel_segment_index = 0
 	pending_event = null
-	_autosave_elapsed = 0.0
 	_save_payload = save_payload.duplicate(true)
 	content_lookup = resolver
 	state = TravelState.DOCKED
@@ -61,6 +59,12 @@ func begin_travel(definition: TravelDefinition) -> Dictionary:
 
 
 func tick_travel(delta: float) -> Dictionary:
+	if state == TravelState.STRANDED:
+		resources["food"] = maxf(0.0, float(resources.get("food", 0.0)) - 0.018 * delta)
+		if float(resources.food) <= 0.0:
+			return _handle_death("Food reached zero.")
+		state_changed.emit()
+		return _failure("Fuel is empty. The ship is stranded.")
 	if state != TravelState.TRAVELLING or travel == null:
 		return _failure("The ship is not travelling.")
 	if delta < 0.0:
@@ -72,17 +76,16 @@ func tick_travel(delta: float) -> Dictionary:
 		for resource_id in travel.resource_drain_per_second:
 			var rate := float(travel.resource_drain_per_second[resource_id])
 			resources[resource_id] = maxf(0.0, float(resources.get(resource_id, 0.0)) - rate * step)
+		# Arrival wins a tie: fuel reaching zero on the exact final step still docks.
+		var reaches_segment_end := step + 0.0001 >= duration_left
+		if float(resources.get("fuel", 0.0)) <= 0.0 and not reaches_segment_end:
+			state = TravelState.STRANDED
+			state_changed.emit()
+			return _failure("Fuel is empty. The ship is stranded.")
 		travel_elapsed += step
 		remaining -= step
 		var segment_finished := travel_elapsed >= travel.segment_durations_seconds[travel_segment_index]
 		if float(resources.get("food", -1.0)) == 0.0:
-			var last_segment := travel_segment_index == travel.segment_durations_seconds.size() - 1
-			if segment_finished and last_segment and not travel.segment_events.has(travel_segment_index):
-				travel_elapsed = 0.0
-				_request_segment_combat()
-				_advance_segment()
-				if state == TravelState.DOCKED:
-					return _success()
 			return _handle_death("Food reached zero.")
 		if segment_finished:
 			travel_elapsed = 0.0
@@ -104,7 +107,8 @@ func choose_event(choice_index: int) -> Dictionary:
 		return _failure("Event choice data is incomplete.")
 	var effects: Dictionary = pending_event.choice_effects[choice_index]
 	for resource_id in effects.get("resource_delta", {}):
-		resources[resource_id] = maxf(0.0, float(resources.get(resource_id, 0.0)) + float(effects.resource_delta[resource_id]))
+		var cap := float(max_resources.get(resource_id, 100.0))
+		resources[resource_id] = clampf(float(resources.get(resource_id, 0.0)) + float(effects.resource_delta[resource_id]), 0.0, cap)
 	if float(resources.get("food", -1.0)) == 0.0:
 		return _handle_death("Food reached zero.")
 	pending_event = null
@@ -159,24 +163,7 @@ func _request_segment_combat() -> void:
 	combat_requested.emit(StringName(travel.segment_combats[travel_segment_index]))
 
 
-func apply_planet_refill(planet: PlanetDefinition) -> Dictionary:
-	if state != TravelState.DOCKED or planet == null or planet.id != current_planet_id:
-		return _failure("Refill can only be applied at the current planet.")
-	for resource_id in planet.resource_refill:
-		resources[resource_id] = float(resources.get(resource_id, 0.0)) + float(planet.resource_refill[resource_id])
-	state_changed.emit()
-	return _success()
-
-
-func process_autosave(delta: float) -> bool:
-	_autosave_elapsed += maxf(delta, 0.0)
-	if _autosave_elapsed < AUTOSAVE_INTERVAL_SECONDS:
-		return false
-	_autosave_elapsed = fmod(_autosave_elapsed, AUTOSAVE_INTERVAL_SECONDS)
-	return save_game(AUTOSAVE_PATH, PREVIOUS_AUTOSAVE_PATH)
-
-
-func save_game(path: String = AUTOSAVE_PATH, previous_path: String = PREVIOUS_AUTOSAVE_PATH) -> bool:
+func save_game(path: String = AUTOSAVE_PATH, previous_path: String = "") -> bool:
 	if current_planet_id.is_empty() or state == TravelState.DEAD:
 		return false
 	var payload := _save_payload.duplicate(true)
@@ -189,7 +176,7 @@ func save_game(path: String = AUTOSAVE_PATH, previous_path: String = PREVIOUS_AU
 	payload["travel_elapsed"] = travel_elapsed
 	payload["travel_segment_index"] = travel_segment_index
 	payload["pending_event_id"] = String(pending_event.id) if pending_event != null else ""
-	if FileAccess.file_exists(path):
+	if not previous_path.is_empty() and FileAccess.file_exists(path):
 		var old_file := FileAccess.open(path, FileAccess.READ)
 		if old_file != null:
 			var old_text := old_file.get_as_text()
@@ -221,11 +208,8 @@ func restore_previous_save() -> Dictionary:
 func _handle_death(reason: String) -> Dictionary:
 	state = TravelState.DEAD
 	state_changed.emit()
-	var restored := restore_previous_save()
 	died.emit()
-	if restored.ok:
-		return _failure("%s Previous save restored." % reason)
-	return _failure("%s No previous save is available." % reason)
+	return _failure(reason)
 
 
 func _load_from_path(path: String) -> Dictionary:

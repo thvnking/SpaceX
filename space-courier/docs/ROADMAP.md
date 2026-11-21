@@ -1,69 +1,40 @@
-# Roadmap & Open Decisions
+# Roadmap and decisions
 
-## Phạm vi và giai đoạn
+This file tracks the delivery order. The approved gameplay baseline lives in `GAME_DESIGN.md` and `SYSTEMS.md`; this file must not contradict them.
 
-### Phase 0 — Design lock trước khi chốt production content
-- Giải quyết các open decisions ưu tiên cao dưới đây.
-- Chốt nghĩa A/B/D cho flight architecture và phạm vi MVP.
-- Chọn Godot version, resolution/input/platform và data serialization; chưa có quyết định trong design chat.
+## Phase 1 — playable single-ship MVP
 
-### Phase 1 — MVP foundations
-- Map khu vực thiên hà với 10 hệ sao; chọn một sao để xem hành tinh, rồi bay thẳng tới bất kỳ hành tinh nào nếu đủ food/fuel.
-- Phân loại hành tinh thành Civilization, Colony và Extraction; đặt bốn điểm nền văn minh ở các hệ 01, 04, 07 và 09.
-- Zoom vào hệ sao và gắn sáu sigil trừu tượng do người chơi tự gán nghĩa.
-- Auto-flight, ETA/resource preflight và arrival.
-- Resource drain/refill/death, segment event hai lựa chọn.
-- Ship layout fixed + shared cargo/equipment grid + rotation + validation feedback.
-- Delivery và hub tối giản; một currency, buy/sell inventory.
-- Combat survival tối thiểu theo ba win conditions; route tiếp tục.
-- Save/load, autosave 5 phút, death restore.
+- One authored ship, galaxy map with 10 provisional systems, direct planet-to-planet travel, ETA and resource preflight.
+- Food and fuel drain continuously while the ship is in space, including when stopped. Fuel zero stops travel; food zero kills the player.
+- Two-choice events at roughly one-minute intervals outside combat. No events run during combat.
+- One ship physical grid shared by cargo and equipment. At Civilization hubs players may buy/sell the four basic equipment items, add/remove items and rearrange; elsewhere they may rearrange carried items only. All inventory changes are locked in flight.
+- Single-trip delivery missions, credit rewards, reputation ranks, failure counts and Civilization access penalty.
+- Basic equipment buy/sell market at Civilization hubs, light combat, manual saves, one pre-departure autosave checkpoint and death choices.
+- Complete side map: select systems, inspect planets, assign saved sigils, reset/jump map view and launch direct routes from side-panel planet actions.
 
-### Phase 2 — Progression
-- Reputation XP unlock model; economy balancing.
-- Repair/refuel, shop content, thêm ship layouts/upgrades.
-- Mở rộng placement/equipment effects và encounter content.
+## Phase 2 — balance and content
 
-### Phase 3 — Narrative & world
-- NPC/crew, quests/story, events có nhân vật, exploration, các hub services còn lại.
-- Nội dung/cốt truyện chưa được tạo trong tài liệu này.
+- Tune routes, event pools, enemy variants, cargo, equipment prices and reward ranges using play sessions.
+- Playtest and tune the approved basic equipment effects, combat controls and route balance.
+- Playtest side-map readability and improve map/item content authoring while retaining direct, unrestricted destination selection.
 
-## OPEN DECISIONS / TODO
+## Phase 3 — deferred expansion
 
-### Gameplay core
-- Resource types chính thức ngoài food/fuel; starting values, caps, drain rates, refill amounts.
-- Khi “resource hết”, tàu dừng ngay với resource nào; xác nhận food=0 là điều kiện death; grace period hay không.
-- Ghé planet hồi loại resource nào, lượng nào, có điều kiện/chi phí không.
-- Số liệu cuối cho tọa độ/scale bản đồ, thời gian bay, drain và ETA. Bản demo hiện dùng công thức khoảng cách tạm; không có topology tuyến bắt buộc.
-- Cách thu thập, số lượng, lưu trữ và tiêu thụ tài nguyên tại Extraction worlds.
-- Tên canon cho các hệ sao/hành tinh và danh sách tài nguyên khai thác; tên hiện tại chỉ là demo.
-- Thời lượng chuyến 2–5 phút là mục tiêu ban đầu hay chỉ mô tả tham khảo.
-- Event frequency/selection, có thể nhiều event mỗi segment không, hậu quả và cách xử lý khi đang combat.
+- Multi-trip high-tier/story missions; extraction and resource gathering; additional ships and physical layouts; new equipment lines and ship upgrade/unlock progression.
+- Crew, NPC story content, additional hub services and exploration systems.
+- Do not build these as MVP features. UI references may reserve space for later work.
 
-### Combat
-- Combat spawn/trigger rules, tần suất, encounter composition và enemy behavior.
-- Survival timer, weapon stats/input, projectile behavior, damage model và combat end ordering.
-- Các loại armor/shield chính xác: physical vs magnetic/energy; pool, hồi, “mỗi chuyến” nghĩa gì.
-- Special equipment activation, cooldown, charges/durability, và tiêu chí giải pháp special equipment được tính là thắng.
+## Decisions still open
 
-### Economy/progression/delivery
-- Currency name, buy/sell prices, delivery rewards, ban thresholds/identity duration.
-- Reputation XP earn/loss, thresholds và unlock set.
-- Quantity/multi-trip mission semantics: cargo giữ lại giữa chuyến, partial delivery, deadline/failure.
-- Shop stock, repair/refuel cost và hub interaction flow.
+The user has authorized the baseline values below as official starting design, with balancing permitted after playtesting. These are not open decisions. Remaining content choices are limited to:
 
-### Inventory/items/ships
-- Bốn rarity labels và cách rarity ảnh hưởng giá cụ thể.
-- Shape coordinate convention, mirroring (chưa chốt), cell tags và rule vocabulary.
-- InventoryValidator behavior cho invalid rotation/edge/contact/heat rules.
-- Item prices, durability maximum/repair semantics, state/effect ordering.
-- Exact starting ship and ship layouts, core room dimensions, usable cells, upgrade availability.
-- “Architecture D, MVP A+B” cần định nghĩa theo lựa chọn flight ở hội thoại trước; không suy diễn nhãn.
-
-### Save/implementation
-- Save slots, manual save UX, autosave retention/rotation, atomicity và death restore selection.
-- Autosave trong flight/combat/event: có lưu runtime state hay chỉ safe checkpoint.
-- Godot version, target platform, viewport/resolution, input mapping, asset pipeline/ComfyUI conventions.
-- Resource format (Godot Resource vs JSON etc), localization and text pipeline.
+- Canonical names and lore for systems, planets, factions and characters. Current map names remain provisional labels.
+- Final art assets, exact visual silhouette interpretation and visual-cell artwork for the supplied ship reference.
+- Specific story mission plots and event writing; no story or crew content is being authored now.
+- Enemy roster and detailed movement/weapon patterns beyond the documented non-rushing orbiting behavior; keep early enemies weak.
+- Extraction resource loop, multi-trip mission rules and additional ship layouts, all explicitly deferred.
+- Final numeric balance after the game is playable. Any rebalance must update `SYSTEMS.md`, `GAME_DESIGN.md`, `IMPLEMENTATION.md`, and relevant data examples together.
 
 ## Change control
-Khi quyết định được đưa ra, cập nhật tài liệu liên quan và xóa mục đó khỏi Open Decisions. Không biến phương án đề xuất thành quyết định nếu người dùng chưa xác nhận.
+
+The resource model, travel ranges, combat baseline, economy, save behavior and inventory access in `SYSTEMS.md` are official decisions from 2026-11-21. Do not restore the old demo values as canon. Clearly label later proposals until approved; update all linked documents when changing an approved rule.

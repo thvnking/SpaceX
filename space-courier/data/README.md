@@ -1,16 +1,16 @@
 # Runtime content
 
-Runtime content is loaded from Godot Resources (`.tres` / `.res`) in these folders:
+Godot Resources (`.tres` / `.res`) are the current runtime format:
 
-- `data/items/` — `ItemDefinition` resources.
-- `data/ships/` — `ShipDefinition` resources.
-- `data/planets/` — `PlanetDefinition` resources.
-- `data/travel/` — `TravelDefinition` resources.
-- `data/events/` — `EventDefinition` resources.
-- `data/combat/` — `CombatDefinition` resources.
-- `data/missions/` — `MissionDefinition` resources.
-- `data/game_setup.tres` — the approved starting planet, ship, resources, hull value and optional starting items.
+- `data/items/` — item definitions.
+- `data/ships/` — ship footprints and fixed core cells.
+- `data/planets/` — planets, Civilization access and basic market inventory.
+- `data/travel/` — route durations and resource rates.
+- `data/events/` — exactly two choices and their effects.
+- `data/combat/` — encounter duration and enemy setup.
+- `data/missions/` — single-trip delivery requirements and rewards.
+- `data/game_setup.tres` — starting ship, planet, resources and loadout when authored.
 
-If `game_setup.tres` is absent, the project installs a small temporary scenario from `scripts/data/demo_content.gd` so the MVP loop can be exercised. These values were authorized for demo use and are not final design decisions. Replace them with approved Resources as the design is refined; remaining production decisions are listed in `docs/ROADMAP.md`.
+`DemoContent` is the fallback used when no setup Resource exists and is synchronized with the official baseline. The complete side map is rendered by `scripts/galaxy_map.gd`; system-map definitions are still duplicated in `scripts/data/demo_content.gd` until a dedicated system resource is implemented.
 
-The current map demo contains 10 star systems and 20 planets. Planet definitions carry a system id, one of three world types (Civilization, Colony, Extraction), Mars ownership information, resource notes, and refill data. The star names, map coordinates, planetary names, resource notes, direct-trip timing formula, and rates are temporary demo content. The system list is currently mirrored in `scripts/galaxy_map.gd` and `scripts/data/demo_content.gd`; keep these definitions synchronized until the map is migrated to dedicated GalaxySystem resources. Direct travel is generated between every ordered pair of distinct planets, with food/fuel affordability checked before departure.
+Official start values and rules: food 100/100 at 0.018 per second, fuel 100/100 at 0.12 per second (the starter cell raises capacity to 120), hull 5 fixed, armor 3 baseline; 30-second same-system flights and 2–10-minute inter-system flights; no automatic planet refill; events roughly every minute outside combat; one autosave checkpoint before each departure; 45-second combat. See `docs/SYSTEMS.md` for full details.

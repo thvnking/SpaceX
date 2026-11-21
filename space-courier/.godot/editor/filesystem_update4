@@ -1,2 +1,3 @@
+res://scripts/systems/game_runtime.gd
 res://scripts/galaxy_map.gd
-res://scripts/data/demo_content.gd
+res://scripts/main.gd
